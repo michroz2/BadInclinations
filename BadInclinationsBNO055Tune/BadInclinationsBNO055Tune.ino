@@ -27,9 +27,22 @@ float Yaw, Roll, Pitch, magx, magy, magz, accx, accy, accz, gyrox, gyroy, gyroz,
 #define GY_955    0x29
 #define OPR_MODE  0x3D
 #define PWR_MODE  0x3E
+#define ACC_Config  0x00 //fake 0 until I know
+#define GYR_Config  0x00 //fake 0 until I know
+#define UNIT_SEL  0x00 //fake until I know. Value is 0
+
 
 
 void setup() {
+
+  // initialize serial port to output the debug information (if necessary)
+#ifdef DEBUG_ENABLE
+  Serial.begin(9600);
+  while (!Serial);
+  DEBUGln(F("===========  SETUP ============="));
+#endif
+
+  
   Wire.begin();
   Wire.setClock(400000); // I2C clock rate ,You can delete it but it helps the speed of I2C (default rate is 100000 Hz)
   delay(100);
@@ -46,45 +59,48 @@ void setup() {
   Wire.endTransmission();
   delay(100);
 
-#ifdef DEBUG_ENABLE
-  Serial.begin(115200);  //Setting the baudrate
-#endif
-  delay(100);
+//  Serial.begin(115200);  //Setting the baudrate
+//  delay(100);
 }
 void loop()
 {
   Wire.beginTransmission(GY_955);
-  Wire.write(0x08);
+//  Wire.write(0x08); //ACC_DATA_X register
+  Wire.write(0x1a); //EUL_DATA_X register
   Wire.endTransmission(false);
-  Wire.requestFrom(GY_955, 32, true);
-  // Accelerometer
-  accx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-  accy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-  accz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-  // Magnetometer
-  magx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-  magy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-  magz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-  // Gyroscope
-  gyrox = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
-  gyroy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
-  gyroz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
+//  Wire.requestFrom(GY_955, 32, true);  //Это стояло для чтоения ВСЕХ данных
+  Wire.requestFrom(GY_955, 6, true);    //Этого достаточно для чтения ТОЛЬКО углов (на самом деле достаточно будет даже 1 угла)
+
+//  // Accelerometer
+//  accx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
+//  accy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
+//  accz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
+//  // Magnetometer
+//  magx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
+//  magy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
+//  magz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
+//  // Gyroscope
+//  gyrox = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
+//  gyroy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
+//  gyroz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
+
   // Euler Angles
   Yaw = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   Roll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   Pitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
-  // Quaternions
-  q0 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-  q1 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-  q2 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-  q3 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
+
+//  // Quaternions
+//  q0 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
+//  q1 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
+//  q2 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
+//  q3 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
 
   // Print data
   DEBUG("Yaw=");
   DEBUG(Yaw);
-  DEBUG(" Roll=");
+  DEBUG("\tRoll=");
   DEBUG(Roll);
-  DEBUG(" Pitch=");
-  DEBUG(Pitch);
+  DEBUG("\tPitch=");
+  DEBUGln(Pitch);
   delay(100);
 }

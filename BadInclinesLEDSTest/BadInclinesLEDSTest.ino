@@ -93,6 +93,7 @@ void initLEDS() { //Симетрично инициализируем значе
       mods[NUM_MODS - i - 1][NUM_LEDS - j - 1] = mods[i][j];
     }
   }
+
 #ifdef DEBUG_ENABLE
   for (byte i = 0; i < NUM_MODS; i++) {
     for (byte j = 0; j < NUM_LEDS; j++) {
@@ -106,7 +107,7 @@ void initLEDS() { //Симетрично инициализируем значе
   }
 #endif
 
-}
+} /////initLEDS()
 
 void processButton()
 {
@@ -131,21 +132,21 @@ void processButton()
   }
   prevButtonState = curButtonState; //запоминаем значение кнопки
 
-}  //processButton()
+}  //////processButton()
 
 void copyMod(byte mod) {
   for (byte i = 0; i < NUM_MODS; i++) {
     leds[i] = mods[mod][i];
   }
-}
+  
+} /////copyMod(byte mod)
 
 
-void processLEDS()
-{
+void processLEDS()  {
   if (curMod != prevMode) //то есть, была нажата кнопка
   {
     FastLED.show();
   }
+  prevMode = curMod;
 
-
-}  //processLEDS()
+}  /////processLEDS()

@@ -65,35 +65,19 @@ void setup() {
 void loop()
 {
   Wire.beginTransmission(GY_955);
-//  Wire.write(0x08); //ACC_DATA_X register
+//TODO: Оставить только 1 угол после определения - какой
   Wire.write(0x1a); //EUL_DATA_X register
   Wire.endTransmission(false);
-//  Wire.requestFrom(GY_955, 32, true);  //Это стояло для чтоения ВСЕХ данных
+//TODO: Оставить только 2 байта
   Wire.requestFrom(GY_955, 6, true);    //Этого достаточно для чтения ТОЛЬКО углов (на самом деле достаточно будет даже 1 угла)
 
-//  // Accelerometer
-//  accx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-//  accy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-//  accz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 100.00; // m/s^2
-//  // Magnetometer
-//  magx = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-//  magy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-//  magz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // mT
-//  // Gyroscope
-//  gyrox = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
-//  gyroy = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
-//  gyroz = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; // Dps
-
   // Euler Angles
+//TODO: Оставить только 1 угол после определения - какой
+//TODO: убрать деление на 16
   Yaw = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   Roll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   Pitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
 
-//  // Quaternions
-//  q0 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-//  q1 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-//  q2 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
-//  q3 = (int16_t)(Wire.read() | Wire.read() << 8 ) / (pow(2, 14)); //unit less
 
   // Print data
   DEBUG("Yaw=");

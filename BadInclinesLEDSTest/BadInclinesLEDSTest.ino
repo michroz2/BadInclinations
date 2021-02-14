@@ -39,7 +39,8 @@
 
 // Здесь задаются вручную паттерны для уклонов влево.
 // Паттерны для уклонов вправо получатся симметрично
-CRGB leds[NUM_MODS][NUM_LEDS] =
+CRGB leds [NUM_LEDS];
+CRGB mods[NUM_MODS][NUM_LEDS] =
 {
   {0xff0000, 0xc80000, 0xaa3200, 0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L6
   {0,        0xc80000, 0xaa3200, 0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L5
@@ -51,7 +52,7 @@ CRGB leds[NUM_MODS][NUM_LEDS] =
 };
 
 
-int curMode;
+int curMod;
 int prevMode;
 int prevButtonState;
 int curButtonState;
@@ -69,12 +70,12 @@ void setup() { //===========  SETUP =============
   pinMode(PIN_LEDS, OUTPUT);
   curButtonState = digitalRead(PIN_BUTTON);
   prevButtonState = curButtonState;
-  curMode = NUM_MODS / 2;  //в надежде, что это будет = 6, то есть «LEVEL» и с него мы начнём тест
-  prevMode = curMode;
+  curMod = NUM_MODS / 2;  //в надежде, что это будет = 6, то есть «LEVEL» и с него мы начнём тест
+  prevMode = curMod;
 
   initLEDS();
-
-  FastLED.addLeds<WS2812B, PIN_LEDS, RGB>(leds[curMode], NUM_LEDS);
+  copyMod(curMod);
+  FastLED.addLeds<WS2812B, PIN_LEDS, GRB>(leds, NUM_LEDS);
   FastLED.show();
 }
 
@@ -89,16 +90,16 @@ void loop() {  //===========  LOOP =============
 void initLEDS() { //Симетрично инициализируем значения массива ледов для отклонения вправо
   for (byte i = 0; i < NUM_MODS / 2; i++) {
     for (byte j = 0; j < NUM_LEDS; j++) {
-      leds[NUM_MODS - i - 1][NUM_LEDS - j - 1] = leds[i][j];
+      mods[NUM_MODS - i - 1][NUM_LEDS - j - 1] = mods[i][j];
     }
   }
 #ifdef DEBUG_ENABLE
   for (byte i = 0; i < NUM_MODS; i++) {
     for (byte j = 0; j < NUM_LEDS; j++) {
       for (byte k = 0; k < 2; k++) {
-        Serial.print(String(leds[i][j][k]) + ("/")); //значения R и G единичных ледов
+        Serial.print(String(mods[i][j][k]) + ("/")); //значения R и G единичных ледов
       }
-      Serial.print(String(leds[i][j][2])); //значениe Blue единичного леда
+      Serial.print(String(mods[i][j][2])); //значениe Blue единичного леда
       Serial.print(("\t")); //значения массивов
     }
     Serial.println();   //перевод строки
@@ -112,16 +113,17 @@ void processButton()
   curButtonState = digitalRead(PIN_BUTTON); //читаем значение кнопки: 1 = ненажата, 0 = нажата
   if (curButtonState < prevButtonState)   //то есть, только в случае нажатия
   {
-    curMode = (curMode + 1) % NUM_MODS;  //по кругу увеличивает на 1: 0,1,2...11,12,0,1...
-    DEBUGln(F("Switch to mode: ") + (curMode - (NUM_MODS / 2)));
-    DEBUGln(F("\tLED Values: ") + (curMode - (NUM_MODS / 2)));
+    curMod = (curMod + 1) % NUM_MODS;  //по кругу увеличивает на 1: 0,1,2...11,12,0,1...
+    copyMod(curMod);
+    DEBUGln(F("Switch to mode: ") + (curMod - (NUM_MODS / 2)));
+    DEBUGln(F("\tLED Values: ") + (curMod - (NUM_MODS / 2)));
 #ifdef DEBUG_ENABLE
     Serial.print("\t");   //перевод строки
     for (byte j = 0; j < NUM_LEDS; j++) {
       for (byte k = 0; k < 2; k++) {
-        Serial.print(String(leds[curMode][j][k]) + ("/")); //значения единичных ледов
+        Serial.print(String(mods[curMod][j][k]) + ("/")); //значения единичных ледов
       }
-      Serial.print(String(leds[curMode][j][2])); //значения «B» единичных ледов
+      Serial.print(String(mods[curMod][j][2])); //значения «B» единичных ледов
       Serial.print((" ")); //значения массивов
     }
     Serial.println();   //перевод строки
@@ -131,15 +133,19 @@ void processButton()
 
 }  //processButton()
 
+void copyMod(byte mod) {
+  for (byte i = 0; i < NUM_MODS; i++) {
+    leds[i] = mods[mod][i];
+  }
+}
+
 
 void processLEDS()
 {
-  if (curMode != prevMode) //то есть, была нажата кнопка
+  if (curMod != prevMode) //то есть, была нажата кнопка
   {
-    FastLED.addLeds<WS2812B, PIN_LEDS, GRB>(leds[curMode], NUM_LEDS);
+    FastLED.show();
   }
-  prevButtonState = curButtonState; //запоминаем значение кнопки
 
-  FastLED.show();
 
 }  //processLEDS()

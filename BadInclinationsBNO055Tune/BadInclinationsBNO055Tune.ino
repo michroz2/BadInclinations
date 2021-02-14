@@ -1,3 +1,4 @@
+//Version 1
 // Connect GND, S1 and SR pins together.
 
 #include <Wire.h>

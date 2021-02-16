@@ -18,7 +18,7 @@
 */
 
 //Для проверки без BNO055 РАСкомментировать следующую строчку:
-#define FAKE_BNO055_RANDOM
+//#define FAKE_BNO055_RANDOM
 
 #include <FastLED.h>
 #include <OneButton.h>
@@ -65,13 +65,13 @@ CRGB leds [NUM_LEDS];
 CRGB modes[NUM_MODES][NUM_LEDS] =
   //LED_FULL_BRIGHTNESS
 {
-  {0xff0000, 0xc80000, 0xaa3200, 0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L6
-  {0,        0xc80000, 0xaa3200, 0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L5
-  {0,        0,        0xaa3200, 0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L4
-  {0,        0,        0,        0x8c5a00, 0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L3
-  {0,        0,        0,        0,        0x647800, 0x3c9600,        0,        0, 0, 0, 0, 0, 0},  //L2
-  {0,        0,        0,        0,        0,        0x3c9600, 0x00ff00,        0, 0, 0, 0, 0, 0},  //L1
-  {0,        0,        0,        0,        0,        0x3c9600, 0x00ff00, 0x3c9600, 0, 0, 0, 0, 0}   //<LEVEL>
+  {0xff0000, 0x780000, 0x641000, 0x461400, 0x644600, 0x3c3c00, 0x000600,        0, 0, 0, 0, 0, 0},  //L6
+  {0x0a0000, 0x780000, 0x641000, 0x461400, 0x644600, 0x3c3c00, 0x000a00,        0, 0, 0, 0, 0, 0},  //L5
+  {0x040000, 0x080000, 0x641000, 0x461400, 0x644600, 0x3c3c00, 0x001400,        0, 0, 0, 0, 0, 0},  //L4
+  {0,        0x040000, 0x080000, 0x461400, 0x644600, 0x3c3c00, 0x002800,        0, 0, 0, 0, 0, 0},  //L3
+  {0,        0,        0x040000, 0x080000, 0x644600, 0x3c3c00, 0x003c00,        0, 0, 0, 0, 0, 0},  //L2
+  {0,        0,        0,        0,        0x00000c, 0x000032, 0x00c800,        0, 0, 0, 0, 0, 0},  //L1
+  {0,        0,        0,        0,        0,        0x00000c, 0x00ff00, 0x00000c, 0, 0, 0, 0, 0}   //!LEVEL!
 };
 
 //здесь можно задавать яркости:
@@ -100,7 +100,7 @@ byte curFade; //Текущее значение яркости
 byte curMode;   //Новое значение режима (зависит от угла наклона)
 byte prevMode; //Предыдущее значение режима
 
-#define NUM_ROLLS 10  //Число последовательных измерений крена, которые усредняются «бегущим средним»
+#define NUM_ROLLS 3  //Число последовательных измерений крена, которые усредняются «бегущим средним»
 int16_t Rolls[NUM_ROLLS]; //набор измерений крена (в целочисленном виде)
 byte curRollPos; //Положение самого старого измерения крена в массиве (сюда надо писать новое значение)
 float Roll;   //Усреднённый крен, который и надо показать светодиоами
@@ -138,7 +138,7 @@ void setup() { //===========  SETUP =============
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
   playGreeting();
-  setupDelta();
+//  setupDelta();   //Это калибровка уровня при старте
   copyMode();
   FastLED.show();
 
@@ -149,7 +149,7 @@ void loop() {  //===========  LOOP =============
   buttonControl.tick();
   getNextRoll();
   curMode = getMode();
-  EVERY_MS(100) {
+  EVERY_MS(10) {
     processLEDS();
   }
 }              //=========== /LOOP =============
@@ -169,6 +169,7 @@ void clickControl() {
   curFade = (curFade + 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
+  prevMode = 100;
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
@@ -181,6 +182,7 @@ void doubleclickControl() {
   curFade = (curFade - 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
+  prevMode = 100;
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
@@ -273,7 +275,7 @@ void initMODS() { //Симетрично инициализируем значе
 void initModeRanges()  { //Симметрично добавляем границы диапазонов в массив
   DEBUGln(F("Mode Ranges:"));
   for (byte i = 0; i < NUM_MODES - 1 ; i++) {
-    modeRange[NUM_MODES - 1 - i] = 0 - modeRange[i];
+    modeRange[NUM_MODES - 2 - i] = 0 - modeRange[i];
     DEBUG(modeRange[i]);
     DEBUG(F(",\t"));
   }
@@ -326,14 +328,14 @@ byte getMode() {
   DEBUG(F("Averaged and corrected Incline = "));
   DEBUGln(averageRoll);
   //  DEBUG(F("Mode: "));
-  for (byte i = 0; i < NUM_MODES; i++) {
+  for (byte i = 0; i < (NUM_MODES-1); i++) {
     if (averageRoll < modeRange[i]) { //по порядку проверяем диапазоны крена...
       //      DEBUGln(i);
       return i;                     //... и возвращаем номер первого диапазона,
     }
   }                                 //в который вписывается текущее среднее значение.
   //  DEBUGln(NUM_MODES);
-  return NUM_MODES;                 //значит, очень много!
+  return (NUM_MODES-1);                 //значит, очень много!
 }/////getMode()
 
 void   playGreeting() {
@@ -342,8 +344,8 @@ void   playGreeting() {
     for (byte i = 0; i < NUM_LEDS; i++) {
       leds[i] = testColors[j];
       FastLED.show();
-      delay(200);
+      delay(60);
     }
-    delay(1000);
+    delay(140);
   }
 }/////playGreeting();

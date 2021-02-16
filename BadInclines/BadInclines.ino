@@ -87,11 +87,10 @@ CRGB modeZero [NUM_LEDS] =
 };
 
 //Это паттерн  приветствия (хотя возможно лучше зашитый в код?)
+//Последовательно пробежит, заполняясь слева направо вот такое количество таких цветов:
 #define NUM_TEST_COLORS 3
 CRGB testColors [NUM_TEST_COLORS] =
-{
-  CRGB::Red, CRGB::Green, CRGB::Blue
-};
+{  CRGB::Red, CRGB::Green, CRGB::Blue };
 
 //Define Control Button.
 OneButton buttonControl(PIN_CONTROL_BUTTON, true);
@@ -100,10 +99,7 @@ byte curFade; //Текущее значение яркости
 byte curMode;   //Новое значение режима (зависит от угла наклона)
 byte prevMode; //Предыдущее значение режима
 
-#define NUM_ROLLS 3  //Число последовательных измерений крена, которые усредняются «бегущим средним»
-int16_t Rolls[NUM_ROLLS]; //набор измерений крена (в целочисленном виде)
-byte curRollPos; //Положение самого старого измерения крена в массиве (сюда надо писать новое значение)
-float Roll;   //Усреднённый крен, который и надо показать светодиоами
+float Roll;   //Крен, который и надо показать светодиодами
 float deltaZero = 0; //Поправка на неровность установки
 
 float modeRange[NUM_MODES - 1] =  // границы диапазонов крена - в градусах - «0» не включать!
@@ -138,7 +134,7 @@ void setup() { //===========  SETUP =============
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
   playGreeting();
-//  setupDelta();   //Это калибровка уровня при старте
+  //  setupDelta();   //Это калибровка уровня при старте
   copyMode();
   FastLED.show();
 
@@ -169,7 +165,7 @@ void clickControl() {
   curFade = (curFade + 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
-  prevMode = 100;
+  prevMode = -1;
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
@@ -182,7 +178,7 @@ void doubleclickControl() {
   curFade = (curFade - 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
-  prevMode = 100;
+  prevMode = -1;
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
@@ -305,37 +301,27 @@ void getNextRoll() {  //читает значение крена и записы
   Wire.requestFrom(GY_955, 2, true);    //достаточно для чтения ТОЛЬКО крена
 
 #ifdef FAKE_BNO055_RANDOM
-  Rolls[curRollPos] = (int16_t)random(-120, 120); //DEBUG MODE!
+  Roll = random(-120, 120); //DEBUG MODE!
 #else
-  Rolls[curRollPos] = (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
+  Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
 #endif
-
   //  DEBUG(F("Current Roll= "));
-  //  DEBUGln(Rolls[curRollPos]);
-  curRollPos = (curRollPos + 1) % NUM_ROLLS; //Циклическое изменение положения в массиве
+  //  DEBUGln(Roll);
 }/////getNextRoll()
 
 byte getMode() {
-  float averageRoll = 0;
-  //  DEBUG(F("Rolls: ("));
-  for (byte i = 0; i < NUM_ROLLS; i++) {
-    averageRoll = averageRoll + Rolls[i];
-    //    DEBUG(Rolls[i]);
-    //    DEBUG(F(",\t"));
-  }
-  //  DEBUGln(")");
-  averageRoll = averageRoll / NUM_ROLLS / 16 - deltaZero; //in Degrees, corrected
-  DEBUG(F("Averaged and corrected Incline = "));
-  DEBUGln(averageRoll);
+  Roll = Roll / 16 - deltaZero; //in Degrees, corrected
+  DEBUG(F("Corrected Incline = "));
+  DEBUGln(Roll);
   //  DEBUG(F("Mode: "));
-  for (byte i = 0; i < (NUM_MODES-1); i++) {
-    if (averageRoll < modeRange[i]) { //по порядку проверяем диапазоны крена...
+  for (byte i = 0; i < (NUM_MODES - 1); i++) {
+    if (Roll < modeRange[i]) { //по порядку проверяем диапазоны крена...
       //      DEBUGln(i);
       return i;                     //... и возвращаем номер первого диапазона,
     }
   }                                 //в который вписывается текущее среднее значение.
   //  DEBUGln(NUM_MODES);
-  return (NUM_MODES-1);                 //значит, очень много!
+  return (NUM_MODES - 1);               //значит, очень много!
 }/////getMode()
 
 void   playGreeting() {

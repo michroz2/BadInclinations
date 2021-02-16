@@ -10,8 +10,7 @@
       SCL -> A5 Arduino (возможно, настраивается библиотекой Wire)
       SDA -> A4 Arduino (возможно, настраивается библиотекой Wire)
     Arduino:
-      Zero button -> NO контакты: GND и D5 Arduino (настраивается в коде внизу)
-      Fade button -> NO контакты: GND и D6 Arduino (настраивается в коде внизу)
+      Control button -> "NO" контакты: GND и D5 Arduino (настраивается в коде внизу)
     Лента WS2812B - 13 светодиодов (настраивается в коде):
       +5v - 5v Arduino
       GND -> GND Arduino
@@ -19,14 +18,14 @@
 */
 
 //Для проверки без BNO055 РАСкомментировать следующую строчку:
-#define BNO055_RANDOM
+#define FAKE_BNO055_RANDOM
 
 #include <FastLED.h>
 #include <OneButton.h>
 #include <Wire.h>
 
-// Дебагирование: раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE
+// Дебагирование (вывод текстов на терминал): раскомментить для использования 1 строчку:
+#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано!!!
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)
@@ -49,10 +48,8 @@
 #define NUM_LEDS 13   //количество ЛЕДов в ленте
 #define NUM_MODES 13  //Количество вариантов свечения ленты
 
-// Настройки для кнопок:
-#define PIN_ZERO_BUTTON 5 //Button PIN для обнуления уровня (второй вывод NO кнопки ->GND)
-#define PIN_FADE_BUTTON 6 //Button PIN для регулировки яркости (второй вывод NO кнопки ->GND)
-
+// PIN для кнопки:
+#define PIN_CONTROL_BUTTON 5 //Button PIN для обнуления уровня (второй вывод NO кнопки ->GND)
 
 // Настройки IMU BNO055:
 #define GY_955    0x29  //Дефолтовый I2C адрес GY_955 
@@ -79,23 +76,41 @@ CRGB modes[NUM_MODES][NUM_LEDS] =
 
 //здесь можно задавать яркости:
 #define NUM_FADES 4   //Количество вариантов яркости ленты
-uint8_t fades [NUM_FADES] = {255, 128, 64, 32}; //максимальное значение (каждого цвета)
+uint8_t fades [NUM_FADES] = {255, 128, 64, 32}; //максимальное значение яркости (каждого цвета)
 
-// Setup a Button.
-OneButton buttonZero(PIN_ZERO_BUTTON, true);
-// Setup another Button.
-OneButton buttonFade(PIN_FADE_BUTTON, true);
+//Следующий паттерн («двойная радуга») загорится при длинном нажатии кнопки (обнуление).
+//При отпускании, загорится «негативный» к этому паттерн и пойдёт обнуление.
+CRGB modeZero [NUM_LEDS] =
+{
+  CRGB::Red, CRGB::Orange, CRGB::Yellow, CRGB::Green, CRGB::Blue, CRGB::Indigo, CRGB::Violet,
+  CRGB::Indigo, CRGB::Blue, CRGB::Green, CRGB::Yellow, CRGB::Orange, CRGB::Red
+};
 
-byte curFade; //Новое значение яркости
-byte curMode;   //Новое значение режима
+//Это паттерн  приветствия (хотя возможно лучше зашитый в код?)
+#define NUM_TEST_COLORS 3
+CRGB testColors [NUM_TEST_COLORS] =
+{
+  CRGB::Red, CRGB::Green, CRGB::Blue
+};
+
+//Define Control Button.
+OneButton buttonControl(PIN_CONTROL_BUTTON, true);
+
+byte curFade; //Текущее значение яркости
+byte curMode;   //Новое значение режима (зависит от угла наклона)
 byte prevMode; //Предыдущее значение режима
 
-#define NUM_ROLLS 10  //Число последовательных измерений крена, которые усредняются
+#define NUM_ROLLS 10  //Число последовательных измерений крена, которые усредняются «бегущим средним»
 int16_t Rolls[NUM_ROLLS]; //набор измерений крена (в целочисленном виде)
 byte curRollPos; //Положение самого старого измерения крена в массиве (сюда надо писать новое значение)
 float Roll;   //Усреднённый крен, который и надо показать светодиоами
-float modeRange[NUM_MODES - 1] =  // границы диапазона крена - «0» не включать!
-{ -5,  -3,  -2,  -1.2,  -0.8,  -0.3,  0.3, 0.8, 1.2, 2, 3, 5  };
+float deltaZero = 0; //Поправка на неровность установки
+
+float modeRange[NUM_MODES - 1] =  // границы диапазонов крена - в градусах - «0» не включать!
+  //!Можно задать только первую половину значений - остальные будут вычислены симметрично!
+{ -5,  -3,  -2,  -1.2,  -0.8,  -0.3,
+  0.3, 0.8, 1.2, 2, 3, 5  //во вторую половину можно записать нули или вообще убрать эту строчку
+};
 
 void setup() { //===========  SETUP =============
 
@@ -116,73 +131,104 @@ void setup() { //===========  SETUP =============
   prevMode = curMode;
 
   initButtons();
-
   initIMU();
-
   initMODS();
-
-  copyMode();
-
+  initModeRanges();
   FastLED.addLeds<WS2812B, PIN_LEDS, GRB>(leds, NUM_LEDS);
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
+  playGreeting();
+  setupDelta();
+  copyMode();
   FastLED.show();
 
 }
 
 void loop() {  //===========  LOOP =============
   // keep watching the push buttons:
-  buttonZero.tick();
-  buttonFade.tick();
+  buttonControl.tick();
   getNextRoll();
   curMode = getMode();
   EVERY_MS(100) {
     processLEDS();
   }
-
 }              //=========== /LOOP =============
 
 void initButtons() {
-  // link the ZERO button functions.
-  buttonZero.attachClick(clickZero);
-  //  buttonZero.attachDoubleClick(doubleclickZero);
-  //  buttonZero.attachLongPressStart(longPressStartZero);
-  //  buttonZero.attachLongPressStop(longPressStopZero);
-  //  buttonZero.attachDuringLongPress(longPressZero);
+  // link the CONTROL button functions.
+  buttonControl.attachClick(clickControl);
+  buttonControl.attachDoubleClick(doubleclickControl);
+  buttonControl.attachLongPressStart(longPressStartControl);
+  buttonControl.attachLongPressStop(longPressStopControl);
+  //  buttonControl.attachDuringLongPress(longPressControl);
+}/////initButtons()
 
-  // link the FADE button functions.
-  buttonFade.attachClick(clickFade);
-  buttonFade.attachDoubleClick(doubleclickFade);
-  //  buttonFade.attachLongPressStart(longPressStartFade);
-  //  buttonFade.attachLongPressStop(longPressStopFade);
-  //  buttonFade.attachDuringLongPress(longPressFade);
-} /////initButtons()
-
-void clickZero() {
-  DEBUGln(F("Zero Button clicked"));
-} /////clickZero()
-
-void clickFade() {
-  DEBUGln(F("Fade Button clicked"));
-  curFade = (curFade+1) % NUM_FADES;
+void clickControl() {
+  DEBUGln(F("Control Button clicked"));
+  DEBUGln(F("Fade Function"));
+  curFade = (curFade + 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
   DEBUGln(fades[curFade]);
-} /////clickFade()
+}/////clickControl()
 
-void doubleclickFade() {
-  DEBUGln(F("Fade Button double-clicked"));
-  curFade = (curFade-1) % NUM_FADES;
+void doubleclickControl() {
+  DEBUGln(F("Control Button double-clicked"));
+  DEBUGln(F("UnFade Function"));
+  curFade = (curFade - 1) % NUM_FADES;
   // set master brightness control
   FastLED.setBrightness(fades[curFade]);
   DEBUG(F("Current Brightness Number: "));
   DEBUG(curFade);
   DEBUG(F(",\tCurrent Brightness: "));
   DEBUGln(fades[curFade]);
-} /////doubleclickFade()
+}/////doubleclickControl()
+
+void longPressStartControl() {
+  DEBUGln(F("Control Button long-press started"));
+  for (byte i = 0; i < NUM_LEDS; i++) {
+    leds[i] = modeZero[i];
+  }
+  FastLED.setBrightness(fades[0]);
+  FastLED.show();
+  deltaZero = 0;
+  delay(100);
+}/////longPressStartControl()
+
+void longPressStopControl() {
+  DEBUGln(F("Control Button long-press stopped"));
+  for (byte i = 0; i < NUM_LEDS; i++) {
+    leds[i] = -leds[i];  //set negative lights
+  }
+  FastLED.setBrightness(fades[0]);
+  FastLED.show();
+  delay(500);
+  setupDelta();
+  FastLED.setBrightness(fades[curFade]);
+
+}/////longPressStopControl()
+
+void setupDelta() { //calculate the average roll - i.e. "calibration"
+  for (int i = 0; i < 1000; i++) {  //read and sum 1000 values
+    Wire.beginTransmission(GY_955);
+    Wire.write(EUL_DATA_Y); //EUL_DATA_Y_LSB register
+    Wire.endTransmission(false);
+    Wire.requestFrom(GY_955, 2, true);    //для чтения ТОЛЬКО крена
+#ifdef FAKE_BNO055_RANDOM
+    deltaZero = deltaZero + (int16_t)random(-10, 20); //DEBUG MODE!
+#else
+    deltaZero = deltaZero + (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
+#endif
+  }
+  deltaZero = deltaZero / 1000 / 16; //average 0 delta in Degrees
+
+  DEBUG(F("deltaZero: "));
+  DEBUGln(deltaZero);
+
+}/////setupDelta()
 
 void initIMU() {
   Wire.beginTransmission(GY_955);
@@ -196,7 +242,7 @@ void initIMU() {
   Wire.write(0x08); //NDOF:0X0C (or B1100) , IMU:0x08 (or B1000) , NDOF_FMC_OFF: 0x0B (or B1011)
   Wire.endTransmission();
   delay(100);
-} /////initIMU()
+}/////initIMU()
 
 
 void initMODS() { //Симетрично инициализируем значения массивов ледов для отклонения вправо
@@ -206,7 +252,6 @@ void initMODS() { //Симетрично инициализируем значе
       modes[NUM_MODES - i - 1][NUM_LEDS - j - 1] = modes[i][j];
     }
   }
-
   //Контроль правильности присвоения всем модам и всем яркостям:
 #ifdef DEBUG_ENABLE
   Serial.println(F("Modes:")); //заголовок
@@ -223,14 +268,24 @@ void initMODS() { //Симетрично инициализируем значе
   Serial.println(F("------------------"));   //конец вывода мод
 #endif
 
-} /////initMODS()
+}/////initMODS()
+
+void initModeRanges()  { //Симметрично добавляем границы диапазонов в массив
+  DEBUGln(F("Mode Ranges:"));
+  for (byte i = 0; i < NUM_MODES - 1 ; i++) {
+    modeRange[NUM_MODES - 1 - i] = 0 - modeRange[i];
+    DEBUG(modeRange[i]);
+    DEBUG(F(",\t"));
+  }
+  DEBUGln();
+}/////initModeRanges()
 
 void copyMode() {
   for (byte i = 0; i < NUM_MODES; i++) {
     leds[i] = modes[curMode][i];
   }
 
-} /////copyMode()
+}/////copyMode()
 
 void processLEDS()  {
   if (curMode != prevMode) //
@@ -247,36 +302,48 @@ void getNextRoll() {  //читает значение крена и записы
   Wire.endTransmission(false);
   Wire.requestFrom(GY_955, 2, true);    //достаточно для чтения ТОЛЬКО крена
 
-#ifdef BNO055_RANDOM
+#ifdef FAKE_BNO055_RANDOM
   Rolls[curRollPos] = (int16_t)random(-120, 120); //DEBUG MODE!
 #else
   Rolls[curRollPos] = (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
 #endif
 
-//  DEBUG(F("Current Roll= "));
-//  DEBUGln(Rolls[curRollPos]);
+  //  DEBUG(F("Current Roll= "));
+  //  DEBUGln(Rolls[curRollPos]);
   curRollPos = (curRollPos + 1) % NUM_ROLLS; //Циклическое изменение положения в массиве
-} /////getNextRoll()
+}/////getNextRoll()
 
 byte getMode() {
   float averageRoll = 0;
-//  DEBUG(F("Rolls: ("));
+  //  DEBUG(F("Rolls: ("));
   for (byte i = 0; i < NUM_ROLLS; i++) {
     averageRoll = averageRoll + Rolls[i];
-//    DEBUG(Rolls[i]);
-//    DEBUG(F(",\t"));
+    //    DEBUG(Rolls[i]);
+    //    DEBUG(F(",\t"));
   }
-//  DEBUGln(")");
-  averageRoll = averageRoll / NUM_ROLLS / 16; //Now it is in Degrees!
-  DEBUG(F("Averaged Incline = "));
+  //  DEBUGln(")");
+  averageRoll = averageRoll / NUM_ROLLS / 16 - deltaZero; //in Degrees, corrected
+  DEBUG(F("Averaged and corrected Incline = "));
   DEBUGln(averageRoll);
-//  DEBUG(F("Mode: "));
+  //  DEBUG(F("Mode: "));
   for (byte i = 0; i < NUM_MODES; i++) {
     if (averageRoll < modeRange[i]) { //по порядку проверяем диапазоны крена...
-//      DEBUGln(i);
+      //      DEBUGln(i);
       return i;                     //... и возвращаем номер первого диапазона,
     }
   }                                 //в который вписывается текущее среднее значение.
-//  DEBUGln(NUM_MODES);
+  //  DEBUGln(NUM_MODES);
   return NUM_MODES;                 //значит, очень много!
-} /////getMode()
+}/////getMode()
+
+void   playGreeting() {
+  DEBUGln(F("«««««playGreeting()»»»»»"));
+  for (byte j = 0; j < 3; j++) {
+    for (byte i = 0; i < NUM_LEDS; i++) {
+      leds[i] = testColors[j];
+      FastLED.show();
+      delay(200);
+    }
+    delay(1000);
+  }
+}/////playGreeting();

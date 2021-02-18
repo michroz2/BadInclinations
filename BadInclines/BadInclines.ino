@@ -158,6 +158,24 @@ int deltaLSD;
 int writesEEPROM = 0;   //Number of EEPROM writes in this session
 int static maxWrites = 10;  //After this number of writes, we shift the address
 
+#ifdef DEBUG_ENABLE
+void scanI2C() {
+DEBUGln(F("Scanning I2C"));
+  for (byte i = 8; i < 120; i++)              //I2C Scanner for debug purpose
+  {
+    Wire.beginTransmission (i);
+    if (Wire.endTransmission () == 0)
+    {
+      Serial.print ("Found address: ");
+      Serial.print (i, DEC);
+      Serial.print (" (0x");
+      Serial.print (i, HEX);
+      Serial.println (")");
+    }
+  }
+}
+#endif
+
 //****************************************************************************************************
 void setup() { //===========  SETUP =============
 
@@ -167,7 +185,8 @@ void setup() { //===========  SETUP =============
   while (!Serial);
 #endif
 
-  // Init Wire library for I2C:
+  DEBUGln(F("Bad Inclines Program ==== Setup ===="));
+  DEBUGln(F("Init Wire library for I2C:"));
   Wire.begin();
   Wire.setClock(400000); // I2C clock rate ,You can delete it but it helps the speed of I2C (default rate is 100000 Hz)
   delay(100);
@@ -176,9 +195,16 @@ void setup() { //===========  SETUP =============
   curMode = NUM_MODES / 2;  //в надежде, что это будет = 6, то есть «LEVEL» и с него мы начнём работу
   prevMode = -1;
 
+  DEBUGln(F("initButtons()"));
   initButtons();
+#ifdef DEBUG_ENABLE
+  scanI2C();
+#endif
+  DEBUGln(F("initIMU()"));
   initIMU();
+  DEBUGln(F("initMODS()"));
   initMODS();
+  DEBUGln(F("initModeRanges()"));
   initModeRanges();
   FastLED.addLeds<WS2812B, PIN_LEDS, GRB>(leds, NUM_LEDS);
   readEEPROM();
@@ -233,7 +259,7 @@ void showSensitivity() {
     leds[i] = 0;
   }
   leds[curSensitivity] = modeLongPressStart[curSensitivity];
-  leds[NUM_LEDS-curSensitivity-1] = modeLongPressStart[curSensitivity];
+  leds[NUM_LEDS - curSensitivity - 1] = modeLongPressStart[curSensitivity];
   FastLED.show();
   delay(1000);
   DEBUG(F("Sensitivity: "));
@@ -338,6 +364,9 @@ void setupDelta() { //calculate the average roll - i.e. "calibration"
 }////setupDelta()
 
 void initIMU() {
+
+  DEBUG(F("Contacting BNO055 IMU on address:\t"));
+  DEBUGln((int)GY_955);
   Wire.beginTransmission(GY_955);
   Wire.write(PWR_MODE); // Power Mode
   Wire.write(0x00); // Normal:0X00 (or B00), Low Power: 0X01 (or B01) , Suspend Mode: 0X02 (orB10)
@@ -420,8 +449,8 @@ void getNextRoll() {  //читает значение крена и записы
 #else
   Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
 #endif
-  //  DEBUG(F("Current Roll= "));
-  //  DEBUGln(Roll);
+//  DEBUG(F("Current Roll (LSD)=\t"));
+//  DEBUGln(Roll);
 }////getNextRoll()
 
 byte getMode() {

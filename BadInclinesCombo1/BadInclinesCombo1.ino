@@ -2,23 +2,23 @@
   Цель: инерционно-независимый уровень.
   Соединяем IMU - по выбору - и светодиодную ленту WS2812B в одном приборе!
   Цель этой итерации - написать универсальный код для разных IMU:
-  BNO055
-  BNO080
-  MPU6050
+  BNO055 - поддерживается
+  BNO080 - поддерживается
+  MPU6050 - туду
   MPU6500 (9200) ?? - может быть
   Соединения:
-    BNO055 (модуль GY_955):
+    BNO055 (модуль GY_BNO055_ADDR):
       Connect GND, S1 and SR pins together. ->GND
-    Any IMU^:
-      VCC -> 5v OR 3.3v Arduino
+    Все IMU:
+      VCC -> 5v OR 3.3v Arduino (Надо смотреть что требует конкретная плата датчика для питания или есть ли на ней преобразователь 5в->3.3в)
       SCL -> A5 Arduino (возможно, настраивается библиотекой Wire)
       SDA -> A4 Arduino (возможно, настраивается библиотекой Wire)
     Arduino:
-      Control button -> "NO" контакты: GND и D5 Arduino (настраивается в коде)
-    Лента WS2812B - 13 светодиодов (настраивается в коде):
-      +5v - 5v Arduino
-      GND -> GND Arduino
-      DIN -> D7 Arduino (настраивается в коде)
+      Control button -> "NO" контакты: GND и D5 Arduino (задаётся в коде)
+    Лента WS2812B - 13 светодиодов (задаётся в коде):
+      +5v (красный) -> 5v Arduino
+      GND (белый) -> GND Arduino
+      DIN (зелёный) -> D7 Arduino (настраивается в коде)
   Функции кнопки:
   Короткое нажатие: Яркость (следующий шаг яркости индикатора)
   Двойное нажатие: Чувствительность (следующая настройка чувствительности)
@@ -32,17 +32,25 @@
 #include <Wire.h> //для I2C
 #include <EEPROM.h> //для сохранения настроек прибора
 
-//Выбор действующего IMU:
+//ПОДСТРОЙКА, Точнее выбор действующего IMU (закомментировать остальные):
 //#define IMU_BNO055
 #define IMU_BNO080
 //#define IMU_MPU6050
 //#define IMU_MPU6500
 
+
+#define USE_X_AXIS 1  //true
+#define USE_Y_AXIS 0  //false
+
+//ПОДСТРОЙКА - выбор используемой оси:
+bool usedAxis = USE_X_AXIS;    //true = X; false=Y;
+
 #ifdef IMU_BNO055
-#define GY_955   0x29  //Дефолтовый I2C адрес GY_955 - BNO055 
+#define GY_BNO055_ADDR   0x29  //Дефолтовый I2C адрес для GY_BNO055 
 #define OPR_MODE  0x3D  //Регистр режима работы
 #define PWR_MODE  0x3E  //Регистр режима питания
 #define EUL_DATA_Y  0x1C  //Регистр угла крена (LSD)
+#define EUL_DATA_X  0x1E  //Регистр угла тонгажа (LSD)
 #endif
 
 #ifdef IMU_BNO080
@@ -50,10 +58,8 @@
 BNO080 myIMU;
 #endif
 
-
-
 //ПОДСТРОЙКА: Дебагирование (вывод текстов на терминал): раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, особенно для загрузки на Pro-mini!!!
+//#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)
@@ -107,13 +113,14 @@ CRGB modes[NUM_MODES][NUM_LEDS] =
 uint8_t fades [NUM_FADES] = {255, 128, 64, 32}; //максимальное значение яркости (каждого цвета)
 
 //Следующий паттерн («двойная радуга») загорится при длинном нажатии кнопки (обнуление).
-//При отпускании, загорится «негативный» к этому паттерн и пойдёт обнуление.
+//При отпускании вся лента загорится синим и пойдёт процесс обнуления.
 CRGB modeLongPressStart [NUM_LEDS] =
 {
   CRGB::Red, CRGB::Orange, CRGB::Yellow, CRGB::Green, CRGB::Blue, CRGB::Indigo, CRGB::Violet,
   CRGB::Indigo, CRGB::Blue, CRGB::Green, CRGB::Yellow, CRGB::Orange, CRGB::Red
 };
 
+//(Возможна ПОДСТРОЙКА :)
 //Это паттерн  приветствия
 //Последовательно пробежит, заполняясь слева направо от края до края,
 //вот такое количество таких цветов:
@@ -133,33 +140,34 @@ boolean revers;   //Переключалка для сторон уровня
 
 #define NUM_SENSITIVITIES 4                         //ПОДСТРОЙКА количества вариантов чувствительности
 float modeRange[NUM_SENSITIVITIES][NUM_MODES - 1] = //ПОДСТРОЙКА границ диапазонов крена - в градусах - «0» не включать!
-  //!Можно задать только первую половину значений каждой линейки - остальные будут вычислены симметрично!
+  //!Нужно задать только первую (левую) половину граничных значений углов для каждой чувствительности - (правые) будут вычислены симметрично!
 {
-  /*0   1   2   3     4     5     6    - соответствующие «моды» */
-  {   5,  3,  2,  1.2,  0.8,  0.3,   }, //во вторую половину можно записать нули или вообще убрать
-  {   5,  4,  3,  2,    1,    0.5,   }, //во вторую половину можно записать нули или вообще убрать
-  {   10, 5,  3,  1,    0.5,  0.2,   }, //во вторую половину можно записать нули или вообще убрать
-  {   10, 5,  2,  1,    0.5,  0.1,   }, //во вторую половину можно записать нули или вообще убрать
+  /*0   1   2   3     4     5     6    - соответствующие «моды» индикатора 0 - это "зашкаливание", а 6 - это состояние баланса*/
+  {   5,  3,  2,  1.2,  0.8,  0.3,   }, //во вторую половину можно записать нули или ничего не писать
+  {   5,  4,  3,  2,    1,    0.5,   }, //во вторую половину можно записать нули или ничего не писать
+  {   10, 5,  3,  1,    0.5,  0.2,   }, //во вторую половину можно записать нули или ничего не писать
+  {   10, 5,  2,  1,    0.5,  0.1,   }, //во вторую половину можно записать нули или ничего не писать
 };
 
-byte curSensitivity = 0;    //Текущее значение чувствительности
+byte curSensitivity = 0;    //Текущее значение чувствительности, для начала 0
 
 
-#define VERY_LONG_PRESS_MS  3000  //ПОДСТРОЙКА: длительность длинного нажатия, при котором
-//вместо калибровки пойдёт инверсия сторон индикатора
+#define VERY_LONG_PRESS_MS  3000  //это ПОДСТРОЙКА: длительность очень длинного нажатия (мс), при котором
+//вместо калибровки произойдёт инверсия сторон индикатора
+
 boolean startCalibrationMode = false;
 uint32_t verylongPressTimer = 0;
 
-
 //EEPROM things
-#define WRITE_EEPROM_DELAY_MS   15000   //ПОДСТРОЙКА: 15 sec - задержка между последним изменением параметров и 
-//сохранением их в ЕЕПРОМ
-#define EEPROM_OLD_CODE 254  // - это код для распознавания нужного места для чтения/записи ЕЕПРОМ
+#define WRITE_EEPROM_DELAY_MS   15000   //ПОДСТРОЙКА: задержка между последним изменением параметров и 
+//сохранением их в ЕЕПРОМ. (Если за это время произвести новое изменение параметров, то сохранение отложится ещё на такое же время. )
+#define EEPROM_OLD_CODE 254  // - специальный код для распознавания нужного места для чтения/записи ЕЕПРОМ
 
-struct EEPROMData {
+struct EEPROMData { //Структура для чтения и записи данных EEPROM
   byte code;  // = 254
-  byte state; // = по битам: 0|FFF|SSS|R = Fade|Sensitivity|Reverse (никогда не равно 254)
-  int deltaLSD;  // = deltaZero * 16 - Это по спеку датчика BNO055 (и других) должно быть целое число в единицах LSD
+  byte state; // = по битам: 0|FFF|SSS|R = Fade|Sensitivity|Reverse (это никогда не равно 254, то есть не может быть спутано с кодом при чтении)
+  int deltaLSD;  // = deltaZero * 16 - Это по спеку датчика BNO055 должно быть целое число в единицах LSD
+  //Для экономии места EEPROM, угол поправки записывается в виде целого числа = угол * 16 (округлённо)
 };
 
 EEPROMData readEEPROMData;
@@ -181,7 +189,7 @@ boolean readrevers;
 int readdeltaLSD;
 int deltaLSD;
 int writesEEPROM = 0;   //Number of EEPROM writes in this session
-int static maxWrites = 10;  //After this number of writes, we shift the address
+int static maxWrites = 10;  //After this number of writes in one session, we shift the EEPROM address by 1 to prevent wear (?)
 
 #ifdef DEBUG_ENABLE
 void scanI2C() {
@@ -191,11 +199,11 @@ void scanI2C() {
     Wire.beginTransmission (i);
     if (Wire.endTransmission () == 0)
     {
-      Serial.print ("Found address: ");
+      Serial.print (F("Found address: "));
       Serial.print (i, DEC);
-      Serial.print (" (0x");
+      Serial.print (F(" (0x"));
       Serial.print (i, HEX);
-      Serial.println (")");
+      Serial.println (F(")"));
     }
   }
 }
@@ -236,7 +244,9 @@ void setup() { //===========  SETUP =============
 }
 
 void loop() {  //===========  LOOP =============
+  DEBUGln(F("tick()"));
   buttonControl.tick();   // keep watching the push button
+  DEBUGln(F("/tick()"));
   getNextRoll();          //получить новое значение крена - код зависит от датчика
   curMode = getMode();    //узнаём в какой диапазон это попадает
   processLEDS();          //Обновляем (если надо) паттерн свечения светодиодов
@@ -369,19 +379,23 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
 
 #ifdef IMU_BNO055
   float delta0 = 0;
-  for (int i = 0; i < 1000; i++) {  //read and sum 1000 values
-    Wire.beginTransmission(GY_955);
-    Wire.write(EUL_DATA_Y); //EUL_DATA_Y_LSD register
-    Wire.endTransmission(false);
-    Wire.requestFrom(GY_955, 2, true);    //для чтения ТОЛЬКО крена
+  for (int i = 0; i < 100; i++) {  //read and sum 1000 values
+    Wire.beginTransmission(GY_BNO055_ADDR);
+    delay(15);
+    Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
+    delay(15);
+    Wire.endTransmission(true);
+    delay(15);
+    Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //для чтения ТОЛЬКО крена
+    delay(15);
     delta0 = delta0 + (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
   }
-  delta0 = delta0 / 1000 / 16; //average 0 delta in Degrees
+  delta0 = delta0 / 100 / 16; //average 0 delta in Degrees
   deltaZero = delta0;
 #endif
 
 #ifdef IMU_BNO080
-  //For this chip we first start the internal Tare function
+  //For this chip we first check if it is not moving:
   byte moving_status = 5;
   do {
     delay(200);
@@ -393,13 +407,18 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
     else if (moving_status == 3) DEBUGln(F("\tStable"));
     else if (moving_status == 4) DEBUGln(F("\tMotion"));
     else if (moving_status == 5) DEBUGln(F("\t[Reserved]"));
-  } while (moving_status > 2); //будет висеть тут, пока датчик находится в движении
+  } while (moving_status > 3); //будет висеть тут, пока датчик находится в движении
+
+  //Then for this chip we use the internal Tare function (it was not in the original library):
   myIMU.sendTareGameXYZCommand();
+
   float delta0 = 0;
-  for (int i = 0; i < 1000; i++) {  //read and sum 1000 values
-    delta0 = delta0 + myIMU.getRoll(); // (RAD)
+  for (int i = 0; i < 100; i++) {  //read and sum 100 values
+    delta0 = delta0 + (usedAxis ? myIMU.getPitch() : myIMU.getRoll()); // (RAD)
+    //(Due to GY-BNO08X board layout we use Pitch = y axis, actually...)
+    delay(50);  //This is the frequency we asked the chip to give data
   }
-  delta0 = delta0 * 180.0 / PI / 1000; //average delta0 in Degrees
+  delta0 = delta0 * 180.0 / PI / 100; //average delta0 in Degrees
   deltaZero = delta0;
 #endif
 
@@ -409,22 +428,23 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
 
 void initIMU() {
   DEBUGln(F("initIMU()"));
+
 #ifdef IMU_BNO055
   DEBUG(F("Contacting BNO055 IMU on address:\t"));
-  DEBUGln((int)GY_955);
-  Wire.beginTransmission (GY_955);
+  DEBUGln((int)GY_BNO055_ADDR);
+  Wire.beginTransmission (GY_BNO055_ADDR);
   if (Wire.endTransmission () != 0) {
     DEBUGln(F("ERROR: BNO055 not detected at default I2C address. Check your connections. Freezing..."));
     while (1);
   }
 
-  Wire.beginTransmission(GY_955);
+  Wire.beginTransmission(GY_BNO055_ADDR);
   Wire.write(PWR_MODE); // Power Mode
   Wire.write(0x00); // Normal:0X00 (or B00), Low Power: 0X01 (or B01) , Suspend Mode: 0X02 (orB10)
   Wire.endTransmission();
   delay(100);
 
-  Wire.beginTransmission(GY_955);
+  Wire.beginTransmission(GY_BNO055_ADDR);
   Wire.write(OPR_MODE); // Operation Mode - Use IMU mode(нам не нужен магнетометр):
   Wire.write(0x08); //NDOF:0X0C (or B1100) , IMU:0x08 (or B1000) , NDOF_FMC_OFF: 0x0B (or B1011)
   Wire.endTransmission();
@@ -440,19 +460,21 @@ void initIMU() {
     while (1) ;
   }
   myIMU.enableGameRotationVector(50); //Send data update every 50ms
+  delay(100);
   myIMU.enableStabilityClassifier(50); //This is used for setZERO function -
   //only calibrate if the chip is at rest!
+  delay(100);
 #endif
 
 #ifdef IMU_MPU6050
   DEBUG(F("Contacting MPU6050 on address:\t"));
-  DEBUGln((int)GY_955);
+  DEBUGln((int)GY_BNO055_ADDR);
   TODO(IMU_MPU6050 init);
 #endif
 
 #ifdef IMU_MPU6500
   DEBUG(F("Contacting IMU_MPU6500 on address:\t"));
-  DEBUGln((int)GY_955);
+  DEBUGln((int)GY_BNO055_ADDR);
   TODO(IMU_MPU6500 init);
 #endif
 
@@ -485,7 +507,7 @@ void initMODS() { //Симетрично инициализируем значе
 
 }////initMODS()
 
-void initModeRanges()  { //Симметрично добавляем границы диапазонов чувствителностей в массив
+void initModeRanges()  { //Симметрично заполняем правую половину массива границ диапазонов чувствительностей по заданной левой
   DEBUGln(F("initModeRanges()>>>>>"));
   for (byte s = 0; s < NUM_SENSITIVITIES; s++) {
     DEBUG(F("Sensitivity: "));
@@ -509,22 +531,30 @@ void copyMode() {
 }////copyMode()
 
 void processLEDS()  {
+    DEBUGln(F("processLEDS()"));
   if (curMode != prevMode) //
   {
     copyMode();
     FastLED.show();
   }
   prevMode = curMode;
+    DEBUGln(F("/processLEDS()"));
 }  ////processLEDS()
 
 void getNextRoll() {  //читает с датчика значение крена в переменную Roll (в град.)
-
+//  DEBUGln(F("getNextRoll()"));
 #ifdef IMU_BNO055
-  Wire.beginTransmission(GY_955);
-  Wire.write(EUL_DATA_Y); //EUL_DATA_Y_LSD register
-  Wire.endTransmission(false);
-  Wire.requestFrom(GY_955, 2, true);    //достаточно для чтения ТОЛЬКО крена
-
+  Wire.beginTransmission(GY_BNO055_ADDR);
+//  DEBUGln(F("getNextRoll() - 1"));
+  delay(150);
+  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
+//  DEBUGln(F("getNextRoll() - 2"));
+  delay(10);
+  if (Wire.endTransmission(true)) return;
+  DEBUGln(F("getNextRoll() - 3"));
+  delay(40);
+  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
+  DEBUGln(F("getNextRoll() - 4"));
   Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
 
   DEBUG(F("Roll BNO055 (LSD)=\t"));
@@ -538,16 +568,19 @@ void getNextRoll() {  //читает с датчика значение крен
 #ifdef IMU_BNO080
   byte moving_status = 10;
   if (myIMU.dataAvailable()) {
-    Roll = (myIMU.getRoll()); // Return the roll (rotation around the x-axis) in Radians
+    Roll = (usedAxis ? myIMU.getPitch() : myIMU.getRoll());
+    // Return the roll (rotation around the x-axis) in Radians
+    //На самом деле,на плате GY-BMO08X ось Х датчика расположена вдоль длинной стороны платы,
+    //поэтому из чисто механических соображений мы берём не крен, а тонгаж.
     moving_status = myIMU.getStabilityClassifier();
   }
+  delay(50);
   DEBUG(F("Roll BNO080 (RAD)=\t"));
   DEBUG(Roll);
 
   Roll = Roll * 180.0 / PI - deltaZero; //in Degrees, corrected
   DEBUG(F("\tIncline (deg)=\t"));
   DEBUG(Roll);
-
   DEBUG(F("\tStatus:"));
   if (moving_status == 0) DEBUGln(F("\tUnknown motion"));
   else if (moving_status == 1) DEBUGln(F("\tOn table"));
@@ -556,13 +589,16 @@ void getNextRoll() {  //читает с датчика значение крен
   else if (moving_status == 4) DEBUGln(F("\tMotion"));
   else if (moving_status == 5) DEBUGln(F("\t[Reserved]"));
 
+
+
 #endif
 
 #ifdef IMU_MPU6050
-  Wire.beginTransmission(GY_955);
-  Wire.write(EUL_DATA_Y); //EUL_DATA_Y_LSD register
+  TODO(IMU_6050);
+  Wire.beginTransmission(GY_BNO055_ADDR);
+  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
   Wire.endTransmission(false);
-  Wire.requestFrom(GY_955, 2, true);    //достаточно для чтения ТОЛЬКО крена
+  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
 
   Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
 
@@ -571,21 +607,22 @@ void getNextRoll() {  //читает с датчика значение крен
 #endif
 
 #ifdef IMU_6500
-  Wire.beginTransmission(GY_955);
-  Wire.write(EUL_DATA_Y); //EUL_DATA_Y_LSD register
+  TODO(IMU_6500);
+  Wire.beginTransmission(GY_BNO055_ADDR);
+  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
   Wire.endTransmission(false);
-  Wire.requestFrom(GY_955, 2, true);    //достаточно для чтения ТОЛЬКО крена
+  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
 
   Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
 
   DEBUG(F("Current Roll 6500 (LSD)=\t"));
   DEBUGln(Roll);
 #endif
-
+  DEBUGln(F("/getNextRoll()"));
 }////getNextRoll()
 
 byte getMode() {
-  //  DEBUG(F("getMode: "));
+  DEBUG(F("getMode: "));
   for (byte i = 0; i < (NUM_MODES - 1); i++) {
     if (Roll > modeRange[curSensitivity][i]) { //по порядку проверяем диапазоны крена...
       //      DEBUGln(i);
@@ -692,6 +729,7 @@ void printEEPROMData() {
 #endif
 
 void processEEPROM() {    //Проверяем (в loop) надо ли писать в ЕЕПРОМ и пишем если надо
+    DEBUGln(F("processEEPROM()"));
   if (writeEEPROM) { //Надо ли вообще писать? (изменЯлось ли что-то?)
     if (millis() > writeEEPROMtimer) {  //Выждано ли достаточное время?
       DEBUGln(F("TIME to write EEPROM!"));
@@ -717,4 +755,5 @@ void processEEPROM() {    //Проверяем (в loop) надо ли писа�
       readEEPROM(); //read the written values back for control
     }
   }
+    DEBUGln(F("/processEEPROM()"));
 }////processEEPROM()

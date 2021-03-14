@@ -4,8 +4,8 @@
 // Дебагирование: раскомментить для использования 1 строчку:
 #define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
-#define DEBUG(x) Serial.print(String(millis())+" "+x)
-#define DEBUGln(x) Serial.println(String(millis())+" "+x)
+#define DEBUG(x) Serial.print(x)
+#define DEBUGln(x) Serial.println(x)
 #else
 #define DEBUG(x)
 #define DEBUGln(x)
@@ -30,6 +30,7 @@ float Yaw, Roll, Pitch, magx, magy, magz, accx, accy, accz, gyrox, gyroy, gyroz,
 #define ACC_Config  0x00 //fake 0 until I know
 #define GYR_Config  0x00 //fake 0 until I know
 #define UNIT_SEL  0x00 //fake until I know. Value is 0
+#define INT_STA 0x37  //interrupt status
 
 
 
@@ -87,4 +88,13 @@ void loop()
   DEBUG("\tPitch=");
   DEBUGln(Pitch);
   delay(100);
+
+  Wire.beginTransmission(GY_955);
+  Wire.write(INT_STA); //
+  Wire.endTransmission(false);
+  Wire.requestFrom(GY_955, 1, true); //Прочитать статус интерраптов
+
+  byte intStat = Wire.read();
+  DEBUG(F("Interrupt Status=\t"));
+  DEBUGln(intStat);
 }

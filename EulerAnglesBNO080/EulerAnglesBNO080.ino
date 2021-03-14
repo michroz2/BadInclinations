@@ -64,7 +64,7 @@ void setup()
   myIMU.enableStepCounter(50); //Send data update every 50ms
   myIMU.enableStabilityClassifier(50); //Send data update every 50ms
 
-  Serial.println(F("Rotation vector enabled"));
+  Serial.println(F("Game Rotation vector enabled"));
   Serial.println(F("Output in form roll, pitch, yaw"));
 }
 

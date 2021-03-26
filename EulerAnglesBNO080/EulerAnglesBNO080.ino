@@ -34,6 +34,14 @@
 #include "SparkFun_BNO080_Arduino_Library.h" // Click here to get the library: http://librarymanager/All#SparkFun_BNO080
 BNO080 myIMU;
 
+//= MILLIS TIMER MACRO =
+// performs the {subsequent} code once and then again after each x ms
+#define EVERY_MS(x) \
+  static uint32_t tmr;\
+  bool flg = millis() - tmr >= (x);\
+  if (flg) tmr = millis();\
+  if (flg)
+//=====
 void setup()
 {
   Serial.begin(115200);
@@ -43,14 +51,14 @@ void setup()
   Wire.begin();
 
   //Are you using a ESP? Check this issue for more information: https://github.com/sparkfun/SparkFun_BNO080_Arduino_Library/issues/16
-//  //=================================
-//  delay(100); //  Wait for BNO to boot
-//  // Start i2c and BNO080
-//  Wire.flush();   // Reset I2C
-//  IMU.begin(BNO080_DEFAULT_ADDRESS, Wire);
-//  Wire.begin(4, 5);
-//  Wire.setClockStretchLimit(4000);
-//  //=================================
+  //  //=================================
+  //  delay(100); //  Wait for BNO to boot
+  //  // Start i2c and BNO080
+  //  Wire.flush();   // Reset I2C
+  //  IMU.begin(BNO080_DEFAULT_ADDRESS, Wire);
+  //  Wire.begin(4, 5);
+  //  Wire.setClockStretchLimit(4000);
+  //  //=================================
 
   if (myIMU.begin() == false)
   {
@@ -60,9 +68,9 @@ void setup()
 
   Wire.setClock(400000); //Increase I2C data rate to 400kHz
 
-  myIMU.enableGameRotationVector(50); //Send data update every 50ms
-  myIMU.enableStepCounter(50); //Send data update every 50ms
-  myIMU.enableStabilityClassifier(50); //Send data update every 50ms
+  myIMU.enableGameRotationVector(10); //Send data update every 50ms
+//  myIMU.enableStepCounter(10); //Send data update every 50ms
+//  myIMU.enableStabilityClassifier(10); //Send data update every 50ms
 
   Serial.println(F("Game Rotation vector enabled"));
   Serial.println(F("Output in form roll, pitch, yaw"));
@@ -70,30 +78,35 @@ void setup()
 
 void loop()
 {
-  //Look for reports from the IMU
-  if (myIMU.dataAvailable() == true)
-  {
-    float roll = (myIMU.getRoll()) * 180.0 / PI; // Convert roll to degrees
-    float pitch = (myIMU.getPitch()) * 180.0 / PI; // Convert pitch to degrees
-    float yaw = (myIMU.getYaw()) * 180.0 / PI; // Convert yaw / heading to degrees
-    long steps = (myIMU.getStepCount()); // Internal Steps counter?
-    byte classification = myIMU.getStabilityClassifier();
+  EVERY_MS(20) {
+    Serial.print(millis());
+    Serial.print("\t===\t");
+    //Look for reports from the IMU
+    if (myIMU.dataAvailable() == true)
+    {
+      float roll = (myIMU.getRoll()) * 180.0 / PI; // Convert roll to degrees
+      float pitch = (myIMU.getPitch()) * 180.0 / PI; // Convert pitch to degrees
+      float yaw = (myIMU.getYaw()) * 180.0 / PI; // Convert yaw / heading to degrees
+//      long steps = (myIMU.getStepCount()); // Internal Steps counter?
+//      byte classification = myIMU.getStabilityClassifier();
 
-    Serial.print(F("roll:\t"));
-    Serial.print(roll, 3);
-    Serial.print(F("\tpitch:\t"));
-    Serial.print(pitch, 3);
-    Serial.print(F("\tyaw:\t"));
-    Serial.print(yaw, 3);
-    Serial.print(F("\tsteps:\t"));
-    Serial.print(steps);
-    if(classification == 0) Serial.print(F("\tUnknown motion"));
-    else if(classification == 1) Serial.print(F("\tOn table"));
-    else if(classification == 2) Serial.print(F("\tStationary"));
-    else if(classification == 3) Serial.print(F("\tStable"));
-    else if(classification == 4) Serial.print(F("\tMotion"));
-    else if(classification == 5) Serial.print(F("\t[Reserved]"));
-    
-    Serial.println();
+      Serial.print(F("roll:\t"));
+      Serial.print(roll, 3);
+      Serial.print(F("\tpitch:\t"));
+      Serial.print(pitch, 3);
+      //    Serial.print(F("\tyaw:\t"));
+      //    Serial.print(yaw, 3);
+//      Serial.print(F("\tsteps:\t"));
+//      Serial.print(steps);
+//      if (classification == 0) Serial.print(F("\tUnknown motion"));
+//      else if (classification == 1) Serial.print(F("\tOn table"));
+//      else if (classification == 2) Serial.print(F("\tStationary"));
+//      else if (classification == 3) Serial.print(F("\tStable"));
+//      else if (classification == 4) Serial.print(F("\tMotion"));
+//      else if (classification == 5) Serial.print(F("\t[Reserved]"));
+
+      Serial.println();
+    }
   }
+  //  Serial.println("===");
 }

@@ -1,16 +1,12 @@
 /*
   Цель: инерционно-независимый уровень.
-  Соединяем IMU - по выбору - и светодиодную ленту WS2812B в одном приборе!
-  Цель этой итерации - написать универсальный код для разных IMU:
-  BNO055 - поддерживается
-  BNO080 - поддерживается
-  MPU6050 - туду
-  MPU6500 (9200) ?? - может быть
+  Соединяем IMU и светодиодную ленту WS2812B в одном приборе!
+  Цель этой итерации - разделить код для разных IMU   (Ввиду проблем с нулём и повторяемостью)
+  Эта версия для BNO055
   Соединения:
     BNO055 (модуль GY_BNO055_ADDR):
       Connect GND, S1 and SR pins together. ->GND
-    Все IMU:
-      VCC -> 5v OR 3.3v Arduino (Надо смотреть что требует конкретная плата датчика для питания или есть ли на ней преобразователь 5в->3.3в)
+      VCC -> 5v 
       SCL -> A5 Arduino (возможно, настраивается библиотекой Wire)
       SDA -> A4 Arduino (возможно, настраивается библиотекой Wire)
     Arduino:
@@ -32,31 +28,17 @@
 #include <Wire.h> //для I2C
 #include <EEPROM.h> //для сохранения настроек прибора
 
-//ПОДСТРОЙКА, Точнее выбор действующего IMU (закомментировать остальные):
-//#define IMU_BNO055
-#define IMU_BNO080
-//#define IMU_MPU6050
-//#define IMU_MPU6500
-
-
 #define USE_X_AXIS 1  //true
 #define USE_Y_AXIS 0  //false
 
 //ПОДСТРОЙКА - выбор используемой оси:
 bool usedAxis = USE_X_AXIS;    //true = X; false=Y;
 
-#ifdef IMU_BNO055
 #define GY_BNO055_ADDR   0x29  //Дефолтовый I2C адрес для GY_BNO055 
 #define OPR_MODE  0x3D  //Регистр режима работы
 #define PWR_MODE  0x3E  //Регистр режима питания
 #define EUL_DATA_Y  0x1C  //Регистр угла крена (LSD)
 #define EUL_DATA_X  0x1E  //Регистр угла тонгажа (LSD)
-#endif
-
-#ifdef IMU_BNO080
-#include "SparkFun_BNO080_Arduino_Library.h" // Click here to get the library: http://librarymanager/All#SparkFun_BNO080
-BNO080 myIMU;
-#endif
 
 //ПОДСТРОЙКА: Дебагирование (вывод текстов на терминал): раскомментить для использования 1 строчку:
 #define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
@@ -74,7 +56,7 @@ BNO080 myIMU;
 #define TODO(x)
 #endif
 
-//#define PROC_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда отработан процесс
+//#define PROC_ENABLE  //Вывод входа-выхода из процедур. ЗАКОММЕНТИРОВАТЬ, когда отработан процесс
 #ifdef PROC_ENABLE
 #define PROC(x) Serial.print(x)
 #define PROCln(x) Serial.println(x)
@@ -386,7 +368,6 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
   DEBUG(F("Old deltaZero: "));
   DEBUGln(deltaZero);
 
-#ifdef IMU_BNO055
   float delta0 = 0;
   for (int i = 0; i < 100; i++) {  //read and sum 1000 values
     Wire.beginTransmission(GY_BNO055_ADDR);
@@ -401,35 +382,6 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
   }
   delta0 = delta0 / 100 / 16; //average 0 delta in Degrees
   deltaZero = delta0;
-#endif
-
-#ifdef IMU_BNO080
-  //For this chip we first check if it is not moving:
-  byte moving_status = 5;
-  do {
-    delay(200);
-    if (myIMU.dataAvailable())
-      moving_status = myIMU.getStabilityClassifier();
-    if (moving_status == 0) DEBUGln(F("\tUnknown motion"));
-    else if (moving_status == 1) DEBUGln(F("\tOn table"));
-    else if (moving_status == 2) DEBUGln(F("\tStationary"));
-    else if (moving_status == 3) DEBUGln(F("\tStable"));
-    else if (moving_status == 4) DEBUGln(F("\tMotion"));
-    else if (moving_status == 5) DEBUGln(F("\t[Reserved]"));
-  } while (moving_status > 3); //будет висеть тут, пока датчик находится в движении
-
-  //Then for this chip we use the internal Tare function (it was not in the original library):
-  myIMU.sendTareGameXYZCommand();
-
-  float delta0 = 0;
-  for (int i = 0; i < 100; i++) {  //read and sum 100 values
-    delta0 = delta0 + (usedAxis ? myIMU.getPitch() : myIMU.getRoll()); // (RAD)
-    //(Due to GY-BNO08X board layout we use Pitch = y axis, actually...)
-    delay(50);  //This is the frequency we asked the chip to give data
-  }
-  delta0 = delta0 * 180.0 / PI / 100; //average delta0 in Degrees
-  deltaZero = delta0;
-#endif
 
   DEBUG(F("New deltaZero: "));
   DEBUGln(deltaZero);
@@ -438,7 +390,6 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
 void initIMU() {
   PROCln(F("initIMU()"));
 
-#ifdef IMU_BNO055
   DEBUG(F("Contacting BNO055 IMU on address:\t"));
   DEBUGln((int)GY_BNO055_ADDR);
   Wire.beginTransmission (GY_BNO055_ADDR);
@@ -458,34 +409,6 @@ void initIMU() {
   Wire.write(0x08); //NDOF:0X0C (or B1100) , IMU:0x08 (or B1000) , NDOF_FMC_OFF: 0x0B (or B1011)
   Wire.endTransmission();
   delay(100);
-#endif
-
-#ifdef IMU_BNO080
-  DEBUG(F("Contacting BNO080 on address:\t"));
-  DEBUGln((int)BNO080_DEFAULT_ADDRESS);
-  if (myIMU.begin() == false)
-  {
-    DEBUGln(F("BNO080 not detected at default I2C address. Check your connections. Freezing..."));
-    while (1) ;
-  }
-  myIMU.enableGameRotationVector(50); //Send data update every 50ms
-  delay(100);
-  myIMU.enableStabilityClassifier(50); //This is used for setZERO function -
-  //only calibrate if the chip is at rest!
-  delay(100);
-#endif
-
-#ifdef IMU_MPU6050
-  DEBUG(F("Contacting MPU6050 on address:\t"));
-  DEBUGln((int)GY_BNO055_ADDR);
-  TODO(IMU_MPU6050 init);
-#endif
-
-#ifdef IMU_MPU6500
-  DEBUG(F("Contacting IMU_MPU6500 on address:\t"));
-  DEBUGln((int)GY_BNO055_ADDR);
-  TODO(IMU_MPU6500 init);
-#endif
 
 }////initIMU()
 
@@ -552,7 +475,7 @@ void processLEDS()  {
 
 void getNextRoll() {  //читает с датчика значение крена в переменную Roll (в град.)
   PROCln(F("getNextRoll()"));
-#ifdef IMU_BNO055
+
   Wire.beginTransmission(GY_BNO055_ADDR);
   //  DEBUGln(F("getNextRoll() - 1"));
   delay(150);
@@ -572,61 +495,7 @@ void getNextRoll() {  //читает с датчика значение крен
   Roll = Roll / 16 - deltaZero; //in Degrees, corrected
   DEBUG(F("\tIncline (deg)=\t"));
   DEBUGln(Roll);
-#endif
 
-#ifdef IMU_BNO080
-  byte moving_status = 10;
-  if (myIMU.dataAvailable()) {
-    Roll = (usedAxis ? myIMU.getPitch() : myIMU.getRoll());
-    // Return the roll (rotation around the x-axis) in Radians
-    //На самом деле,на плате GY-BMO08X ось Х датчика расположена вдоль длинной стороны платы,
-    //поэтому из чисто механических соображений мы берём не крен, а тонгаж.
-    moving_status = myIMU.getStabilityClassifier();
-  }
-  delay(50);
-  DEBUG(F("Roll BNO080 (RAD)=\t"));
-  DEBUG(Roll);
-
-  Roll = Roll * 180.0 / PI - deltaZero; //in Degrees, corrected
-  DEBUG(F("\tIncline (deg)=\t"));
-  DEBUG(Roll);
-  DEBUG(F("\tStatus:"));
-  if (moving_status == 0) DEBUGln(F("\tUnknown motion"));
-  else if (moving_status == 1) DEBUGln(F("\tOn table"));
-  else if (moving_status == 2) DEBUGln(F("\tStationary"));
-  else if (moving_status == 3) DEBUGln(F("\tStable"));
-  else if (moving_status == 4) DEBUGln(F("\tMotion"));
-  else if (moving_status == 5) DEBUGln(F("\t[Reserved]"));
-
-
-
-#endif
-
-#ifdef IMU_MPU6050
-  TODO(IMU_6050);
-  Wire.beginTransmission(GY_BNO055_ADDR);
-  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
-  Wire.endTransmission(false);
-  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
-
-  Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
-
-  DEBUG(F("Current Roll MPU6050 (LSD)=\t"));
-  DEBUGln(Roll);
-#endif
-
-#ifdef IMU_6500
-  TODO(IMU_6500);
-  Wire.beginTransmission(GY_BNO055_ADDR);
-  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
-  Wire.endTransmission(false);
-  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
-
-  Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
-
-  DEBUG(F("Current Roll 6500 (LSD)=\t"));
-  DEBUGln(Roll);
-#endif
   PROCln(F("/getNextRoll()"));
 }////getNextRoll()
 

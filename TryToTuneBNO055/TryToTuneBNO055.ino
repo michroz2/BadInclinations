@@ -36,8 +36,8 @@ float avrY, DeltaPitch, CorPitch;
 float avrY2; //test
 
 
-#define NUM_AVERAGE 10
-#define NUM_OK 2
+#define NUM_AVERAGE 8
+#define NUM_OK 3
 
 float avrData[NUM_AVERAGE];
 byte curNum;
@@ -159,6 +159,7 @@ void loop() //====================LOOP==========================================
     numOK = 0;
   }
   if (accOK)     DeltaPitch = (avrY - Pitch);
+//  else DeltaPitch =  abs(DeltaPitch)<abs(avrY - Pitch) ? DeltaPitch : (avrY - Pitch);
 
   CorPitch = Pitch + DeltaPitch;
 

@@ -1,16 +1,15 @@
 /*
   Цель: инерционно-независимый уровень.
-  Соединяем IMU и светодиодную ленту WS2812B в одном приборе!
+  Соединяем IMU BNO055 и светодиодную ленту WS2812B в одном приборе!
   Цель этой итерации - разделить код для разных IMU   (Ввиду проблем с нулём и повторяемостью)
-  Эта версия для BNO055
   Соединения:
     BNO055 (модуль GY_BNO055_ADDR):
       Connect GND, S1 and SR pins together. ->GND
-      VCC -> 5v 
+      VCC -> 5v
       SCL -> A5 Arduino (возможно, настраивается библиотекой Wire)
       SDA -> A4 Arduino (возможно, настраивается библиотекой Wire)
     Arduino:
-      Control button -> "NO" контакты: GND и D5 Arduino (задаётся в коде)
+      Control button -> "N-O" контакты: GND и D5 Arduino (задаётся в коде)
     Лента WS2812B - 13 светодиодов (задаётся в коде):
       +5v (красный) -> 5v Arduino
       GND (белый) -> GND Arduino
@@ -182,6 +181,13 @@ int deltaLSD;
 int writesEEPROM = 0;   //Number of EEPROM writes in this session
 int static maxWrites = 10;  //After this number of writes in one session, we shift the EEPROM address by 1 to prevent wear (?)
 
+//Переменные для коррекции угла по показаниям акселерометра, когда он в покое
+#define NUM_AVERAGE 8  //коэффициент усреднения
+#define NUM_OK 3    //количество проверочных значений
+float  accDelta, avrY, DeltaPitch;
+bool  accOK; //в покое ли акселерометр?
+byte numOK; //количество хороших проверочных значений
+
 #ifdef DEBUG_ENABLE
 void scanI2C() {
   PROCln(F("Scanning I2C"));
@@ -226,10 +232,15 @@ void setup() { //===========  SETUP =============
 #endif
 
   initIMU();  //Инициализация модуля IMU - код зависит от датчика
+
   initMODS();
+
   initModeRanges();
+
   readEEPROM();
+
   initLEDs();
+
   playGreeting();
 
 }
@@ -238,7 +249,7 @@ void loop() {  //===========  LOOP =============
   PROCln(F("tick()"));
   buttonControl.tick();   // keep watching the push button
   PROCln(F("/tick()"));
-  getNextRoll();          //получить новое значение крена - код зависит от датчика
+  getNextRoll();          //получить новое значение крена
   curMode = getMode();    //узнаём в какой диапазон это попадает
   processLEDS();          //Обновляем (если надо) паттерн свечения светодиодов
   processEEPROM();          //Проверяем надо ли писать в ЕЕПРОМ - и пишем, если надо.
@@ -403,6 +414,20 @@ void initIMU() {
   Wire.write(0x00); // Normal:0X00 (or B00), Low Power: 0X01 (or B01) , Suspend Mode: 0X02 (orB10)
   Wire.endTransmission();
   delay(100);
+  //just in case:
+  //CONFIG mode:
+  Wire.beginTransmission(GY_BNO055_ADDR);
+  Wire.write(OPR_MODE); // Operation Mode
+  Wire.write(0x00); //0=CONFIG Mode; NDOF:0X0C (or B1100) , IMU:0x08 (or B1000) , NDOF_FMC_OFF: 0x0B (or B1011)
+  Wire.endTransmission();
+  delay(50);
+  //UNIT_SEL (units selection):
+  Wire.beginTransmission(GY_BNO055_ADDR);
+  Wire.write(0x3B); // UNIT_SEL
+  Wire.write(0b00000000); //m/s^2; Deg; °C; like Windows
+  Wire.endTransmission();
+  delay(50);
+  //Здесь я хотел ещё что-то поконфигурить в чипе в режиме конфигурирования, но ничего полезного не нашёл в спеках
 
   Wire.beginTransmission(GY_BNO055_ADDR);
   Wire.write(OPR_MODE); // Operation Mode - Use IMU mode(нам не нужен магнетометр):
@@ -473,27 +498,50 @@ void processLEDS()  {
   PROCln(F("/processLEDS()"));
 }  ////processLEDS()
 
-void getNextRoll() {  //читает с датчика значение крена в переменную Roll (в град.)
+void getNextRoll() {  //задача: прочитать с датчика значение крена в переменную Roll (в град.)
   PROCln(F("getNextRoll()"));
-
   Wire.beginTransmission(GY_BNO055_ADDR);
-  //  DEBUGln(F("getNextRoll() - 1"));
-  delay(150);
-  Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
-  //  DEBUGln(F("getNextRoll() - 2"));
-  delay(10);
-  if (Wire.endTransmission(true)) return;
-//  DEBUGln(F("getNextRoll() - 3"));
-  delay(40);
-  Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //достаточно для чтения ТОЛЬКО крена
-//  DEBUGln(F("getNextRoll() - 4"));
-  Roll = (Wire.read() | Wire.read() << 8 );      //LSD units (16*Degrees)
+  Wire.write(0x08);   //это начальный адрес регистра с данными, а круто было так: usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
+  Wire.endTransmission(false);
+  Wire.requestFrom(GY_BNO055_ADDR, 24, true);    //
+  // Accelerometer
+  float accx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  float accy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  float accz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  // Magnetometer
+  int16_t magx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  int16_t magy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  int16_t magz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  // Gyroscope
+  int16_t gyrox = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  int16_t gyroy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  int16_t gyroz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  // Euler Angles
+  int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; //in Degrees unit
+  Roll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
+  float Pitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
 
-  DEBUG(F("Roll BNO055 (LSD)=\t"));
+  float accPitch = usedAxis ? atan2(accy, accz) : atan2(accx, accz);
+  accPitch *= 57.29578;      //  /PI * 180;
+              accDelta = (accPitch - avrY) / NUM_AVERAGE;
+  avrY += accDelta; //Сглаживание типа раннинг эверадж простым путём
+  if (abs(accDelta) < 0.01) { //если последующие значения угла от акселерометра не сильно выбиваются от среднего...
+    accOK = (numOK++ >= NUM_OK); //...и если их таких хороших несколько подряд, то...
+  }
+  else {
+    accOK = false;
+    numOK = 0;
+  }
+  if (accOK) DeltaPitch = (avrY - Pitch);  //...то мы корректируем по значению угла из акселерометра
+
+  Roll = usedAxis ? (Pitch + DeltaPitch) : (Roll + DeltaPitch);
+
+  DEBUG(F("Roll BNO055 (°)=\t"));
   DEBUG(Roll);
 
-  Roll = Roll / 16 - deltaZero; //in Degrees, corrected
-  DEBUG(F("\tIncline (deg)=\t"));
+  Roll = Roll - deltaZero; //in Degrees, corrected
+
+  DEBUG(F("\tIncline (°)=\t"));
   DEBUGln(Roll);
 
   PROCln(F("/getNextRoll()"));

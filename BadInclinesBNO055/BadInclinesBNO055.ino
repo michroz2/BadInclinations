@@ -182,14 +182,14 @@ int writesEEPROM = 0;   //Number of EEPROM writes in this session
 int static maxWrites = 10;  //After this number of writes in one session, we shift the EEPROM address by 1 to prevent wear (?)
 
 //Переменные для коррекции угла по показаниям акселерометра, когда он в покое
-#define NUM_AVERAGE 8  //коэффициент усреднения
+#define NUM_AVERAGE 10  //коэффициент усреднения
 #define NUM_OK 3    //количество проверочных значений
 float  accDelta, avrY, DeltaPitch;
 bool  accOK; //в покое ли акселерометр?
 byte numOK; //количество хороших проверочных значений
 
 //Моргание встроенным светодиодом - переключение каждые 10 циклов.
-#define BLINK_EVERY_N 10
+#define BLINK_EVERY_N 50
 int blinkAlive;
 bool  blinkLED;
 

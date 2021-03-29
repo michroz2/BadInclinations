@@ -40,7 +40,7 @@ bool usedAxis = USE_X_AXIS;    //true = X; false=Y;
 #define EUL_DATA_X  0x1E  //Регистр угла тонгажа (LSD)
 
 //ПОДСТРОЙКА: Дебагирование (вывод текстов на терминал): раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
+//#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)
@@ -188,6 +188,13 @@ float  accDelta, avrY, DeltaPitch;
 bool  accOK; //в покое ли акселерометр?
 byte numOK; //количество хороших проверочных значений
 
+//Моргание встроенным светодиодом - переключение каждые 10 циклов.
+#define BLINK_EVERY_N 10
+int blinkAlive;
+bool  blinkLED;
+
+
+
 #ifdef DEBUG_ENABLE
 void scanI2C() {
   PROCln(F("Scanning I2C"));
@@ -253,6 +260,7 @@ void loop() {  //===========  LOOP =============
   curMode = getMode();    //узнаём в какой диапазон это попадает
   processLEDS();          //Обновляем (если надо) паттерн свечения светодиодов
   processEEPROM();          //Проверяем надо ли писать в ЕЕПРОМ - и пишем, если надо.
+  processBlink(BLINK_EVERY_N);  //10
 }              //=========== /LOOP =============
 
 void initButtons() {
@@ -683,3 +691,11 @@ void processEEPROM() {    //Проверяем (в loop) надо ли писа�
   }
   PROCln(F("/processEEPROM()"));
 }////processEEPROM()
+
+void processBlink(int everyN) {
+  blinkAlive = ++blinkAlive % everyN;
+  if (blinkAlive == 0) {
+    blinkLED = !blinkLED;
+    digitalWrite(LED_BUILTIN, blinkLED); 
+  }
+}////processBlink(int everyN)

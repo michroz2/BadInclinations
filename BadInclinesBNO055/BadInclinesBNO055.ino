@@ -188,7 +188,7 @@ float  accDelta, avrY, DeltaPitch;
 bool  accOK; //в покое ли акселерометр?
 byte numOK; //количество хороших проверочных значений
 
-//Моргание встроенным светодиодом - переключение каждые 10 циклов.
+//Моргание встроенным светодиодом - переключение каждые N циклов.
 #define BLINK_EVERY_N 50
 int blinkAlive;
 bool  blinkLED;
@@ -260,7 +260,7 @@ void loop() {  //===========  LOOP =============
   curMode = getMode();    //узнаём в какой диапазон это попадает
   processLEDS();          //Обновляем (если надо) паттерн свечения светодиодов
   processEEPROM();          //Проверяем надо ли писать в ЕЕПРОМ - и пишем, если надо.
-  processBlink(BLINK_EVERY_N);  //10
+  processBlink(BLINK_EVERY_N);  //Blink on-board LED
 }              //=========== /LOOP =============
 
 void initButtons() {

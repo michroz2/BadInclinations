@@ -37,7 +37,7 @@ bool usedAxis = USE_X_AXIS;    //true = X; false=Y;
 BNO080 myIMU;
 
 //ПОДСТРОЙКА: Дебагирование (вывод текстов на терминал): раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
+//#define DEBUG_ENABLE  //ЗАКОММЕНТИРОВАТЬ, когда всё отработано, например, перед загрузкой на Pro-mini.
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)

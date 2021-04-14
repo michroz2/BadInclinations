@@ -31,7 +31,7 @@
 #define USE_Y_AXIS 0  //false
 
 //ПОДСТРОЙКА - выбор используемой оси:
-bool usedAxis = USE_X_AXIS;    //true = X; false=Y;
+bool usedAxis = USE_Y_AXIS;    //true = X; false=Y;
 
 #define GY_BNO055_ADDR   0x29  //Дефолтовый I2C адрес для GY_BNO055 
 #define OPR_MODE  0x3D  //Регистр режима работы
@@ -149,7 +149,7 @@ boolean startCalibrationMode = false;
 uint32_t verylongPressTimer = 0;
 
 //EEPROM things
-#define WRITE_EEPROM_DELAY_MS   15000   //ПОДСТРОЙКА: задержка между последним изменением параметров и 
+#define WRITE_EEPROM_DELAY_MS   60000   //ПОДСТРОЙКА: задержка между последним изменением параметров и 
 //сохранением их в ЕЕПРОМ. (Если за это время произвести новое изменение параметров, то сохранение отложится ещё на такое же время. )
 #define EEPROM_OLD_CODE 254  // - специальный код для распознавания нужного места для чтения/записи ЕЕПРОМ
 
@@ -179,7 +179,7 @@ boolean readrevers;
 int readdeltaLSD;
 int deltaLSD;
 int writesEEPROM = 0;   //Number of EEPROM writes in this session
-int static maxWrites = 10;  //After this number of writes in one session, we shift the EEPROM address by 1 to prevent wear (?)
+int static maxWrites = 7;  //After this number of writes in one session, we shift the EEPROM address by 1 to prevent wear (?)
 
 //Переменные для коррекции угла по показаниям акселерометра, когда он в покое
 #define NUM_AVERAGE 10  //коэффициент усреднения
@@ -375,7 +375,7 @@ void longPressStopControl() {
       leds[i] = CRGB::Blue;  //set Blue lights to indicate calibration
     }
     FastLED.show();
-    delay(500);
+    delay(1000);
     prevMode = -1;
     prepareEEPROMWrite();
     setZERO();
@@ -384,26 +384,63 @@ void longPressStopControl() {
 
 void setZERO() { //calculate the average roll - i.e. "calibration"
   PROCln(F("setZERO()"));
-  DEBUG(F("Old deltaZero: "));
+  DEBUG(F("Old deltaZero: (°)"));
   DEBUGln(deltaZero);
 
   float delta0 = 0;
-  for (int i = 0; i < 100; i++) {  //read and sum 1000 values
+#define NUM_ZEROED_READINGS 20
+  for (int i = 0; i < NUM_ZEROED_READINGS; i++) {  //read and sum 100 values
+
+    //    Wire.beginTransmission(GY_BNO055_ADDR);
+    //    //    delay(15);
+    //    Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
+    //    //    delay(15);
+    //    Wire.endTransmission(true);
+    //    //    delay(15);
+    //    Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //для чтения ТОЛЬКО крена
+    //    //    delay(15);
+    //    float ZeroPosition = (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
+    //    DEBUG(F("ZeroPosition: (°)"));
+    //    DEBUGln(ZeroPosition/16);
+
+// Сделаем для определения нуля такую же процедуру чтения данных, как и для «рабочего» чтения данных
     Wire.beginTransmission(GY_BNO055_ADDR);
-    delay(15);
-    Wire.write(usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
-    delay(15);
-    Wire.endTransmission(true);
-    delay(15);
-    Wire.requestFrom(GY_BNO055_ADDR, 2, true);    //для чтения ТОЛЬКО крена
-    delay(15);
-    delta0 = delta0 + (int16_t)(Wire.read() | Wire.read() << 8 ); //LSD units (16*Degrees)
+    Wire.write(0x08);   //это начальный адрес регистра с данными
+    Wire.endTransmission(false);
+    Wire.requestFrom(GY_BNO055_ADDR, 24, true);    //
+    // Accelerometer
+    float accx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+    float accy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+    float accz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+    // Magnetometer
+    int16_t magx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+    int16_t magy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+    int16_t magz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+    // Gyroscope
+    int16_t gyrox = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+    int16_t gyroy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+    int16_t gyroz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+    // Euler Angles
+    int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00;
+    float ZRoll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
+    float ZPitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
+
+    float ZeroPosition = usedAxis ? (ZPitch + DeltaPitch) : (ZRoll + DeltaPitch); //DeltaPitch - это наша текущая поправка на несовершенство SensorFusion...
+    
+    DEBUG(F("ZeroPosition: (°)"));
+    DEBUGln(ZeroPosition);
+
+    delta0 = delta0 + ZeroPosition;
+    delay(30);
   }
-  delta0 = delta0 / 100 / 16; //average 0 delta in Degrees
+  delta0 = delta0 / NUM_ZEROED_READINGS; //average 0 delta in Degrees
   deltaZero = delta0;
 
-  DEBUG(F("New deltaZero: "));
+  DEBUG(F("New deltaZero (°): "));
   DEBUGln(deltaZero);
+#ifdef DEBUG_ENABLE
+  delay(2000);
+#endif
 }////setZERO()
 
 void initIMU() {
@@ -509,7 +546,7 @@ void processLEDS()  {
 void getNextRoll() {  //задача: прочитать с датчика значение крена в переменную Roll (в град.)
   PROCln(F("getNextRoll()"));
   Wire.beginTransmission(GY_BNO055_ADDR);
-  Wire.write(0x08);   //это начальный адрес регистра с данными, а круто было так: usedAxis ? EUL_DATA_X : EUL_DATA_Y); //Roll or Pitch
+  Wire.write(0x08);   //это начальный адрес регистра с данными
   Wire.endTransmission(false);
   Wire.requestFrom(GY_BNO055_ADDR, 24, true);    //
   // Accelerometer
@@ -525,13 +562,13 @@ void getNextRoll() {  //задача: прочитать с датчика зн�
   int16_t gyroy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
   int16_t gyroz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
   // Euler Angles
-  int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; //in Degrees unit
+  int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00;
   Roll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   float Pitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
 
-  float accPitch = usedAxis ? atan2(accy, accz) : atan2(accx, accz);
+  float accPitch = usedAxis ? atan2(accy, accz) : atan2(accx, accz); //
   accPitch *= 57.29578;      //  /PI * 180;
-              accDelta = (accPitch - avrY) / NUM_AVERAGE;
+  accDelta = (accPitch - avrY) / NUM_AVERAGE;
   avrY += accDelta; //Сглаживание типа раннинг эверадж простым путём
   if (abs(accDelta) < 0.01) { //если последующие значения угла от акселерометра не сильно выбиваются от среднего...
     accOK = (numOK++ >= NUM_OK); //...и если их таких хороших несколько подряд, то...
@@ -696,6 +733,6 @@ void processBlink(int everyN) {
   blinkAlive = ++blinkAlive % everyN;
   if (blinkAlive == 0) {
     blinkLED = !blinkLED;
-    digitalWrite(LED_BUILTIN, blinkLED); 
+    digitalWrite(LED_BUILTIN, blinkLED);
   }
 }////processBlink(int everyN)

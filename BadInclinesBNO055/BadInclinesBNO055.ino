@@ -421,7 +421,7 @@ void setZERO() { //calculate the average roll - i.e. "calibration"
     int16_t gyroy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
     int16_t gyroz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
     // Euler Angles
-    int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00;
+    float ZYaw = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00;
     float ZRoll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
     float ZPitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
 
@@ -545,24 +545,37 @@ void processLEDS()  {
 
 void getNextRoll() {  //задача: прочитать с датчика значение крена в переменную Roll (в град.)
   PROCln(F("getNextRoll()"));
+#define DELAY_I2C 10
   Wire.beginTransmission(GY_BNO055_ADDR);
+  delay(DELAY_I2C);
   Wire.write(0x08);   //это начальный адрес регистра с данными
+  delay(DELAY_I2C);
   Wire.endTransmission(false);
+  delay(DELAY_I2C);
   Wire.requestFrom(GY_BNO055_ADDR, 24, true);    //
   // Accelerometer
   float accx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  delay(DELAY_I2C);
   float accy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  delay(DELAY_I2C);
   float accz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 100.00; // m/s^2
+  delay(DELAY_I2C);
   // Magnetometer
   int16_t magx = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  delay(DELAY_I2C);
   int16_t magy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  delay(DELAY_I2C);
   int16_t magz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // mT
+  delay(DELAY_I2C);
   // Gyroscope
   int16_t gyrox = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  delay(DELAY_I2C);
   int16_t gyroy = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  delay(DELAY_I2C);
   int16_t gyroz = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00; // Dps
+  delay(DELAY_I2C);
   // Euler Angles
-  int16_t Yaw = (int16_t)(Wire.read() | Wire.read() << 8 );// / 16.00;
+  float Yaw = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00;
   Roll = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
   float Pitch = (int16_t)(Wire.read() | Wire.read() << 8 ) / 16.00; //in Degrees unit
 
